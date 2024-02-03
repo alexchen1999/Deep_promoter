@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 
 import collections
 import time
-import cPickle as pickle
 
 _since_beginning = collections.defaultdict(lambda: {})
 _since_last_flush = collections.defaultdict(lambda: {})
@@ -19,23 +18,21 @@ def plot(name, value):
 	_since_last_flush[name][_iter[0]] = value
 
 def flush():
-	prints = []
+    prints = []
 
-	for name, vals in _since_last_flush.items():
-		prints.append("{}\t{}".format(name, np.mean(vals.values())))
-		_since_beginning[name].update(vals)
+    for name, vals in _since_last_flush.items():
+        mean_value = np.mean(list(vals.values()))  # Convert dict_values to a list
+        prints.append("{}\t{}".format(name, mean_value))
+        _since_beginning[name].update(vals)
 
-		x_vals = np.sort(_since_beginning[name].keys())
-		y_vals = [_since_beginning[name][x] for x in x_vals]
+        x_vals = np.sort(list(_since_beginning[name].keys()))  # Convert dict_keys to a list
+        y_vals = [_since_beginning[name][x] for x in x_vals]
 
-		plt.clf()
-		plt.plot(x_vals, y_vals)
-		plt.xlabel('iteration')
-		plt.ylabel(name)
-		plt.savefig(name.replace(' ', '_')+'.jpg')
+        plt.clf()
+        plt.plot(x_vals, y_vals)
+        plt.xlabel('iteration')
+        plt.ylabel(name)
+        plt.savefig(name.replace(' ', '_')+'.jpg')
 
-	print "iter {}\t{}".format(_iter[0], "\t".join(prints))
-	_since_last_flush.clear()
-
-	with open('log.pkl', 'wb') as f:
-		pickle.dump(dict(_since_beginning), f, pickle.HIGHEST_PROTOCOL)
+    print("iter {}\t{}".format(_iter[0], "\t".join(prints)))
+    _since_last_flush.clear()

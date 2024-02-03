@@ -103,7 +103,7 @@ def Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_
             with tf.name_scope('filter_mask'):
                 filters = filters * mask
 
-        result = tf.nn.conv2d(
+        result = tf.compat.v1.nn.conv2d( # Update to tf 2.x
             input=inputs, 
             filter=filters, 
             strides=[1, 1, stride, stride],
