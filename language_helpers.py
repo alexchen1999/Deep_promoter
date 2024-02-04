@@ -29,7 +29,7 @@ class NgramLanguageModel(object):
     def ngrams(self):
         n = self._n
         for sample in self._samples:
-            for i in xrange(len(sample)-n+1):
+            for i in range(len(sample)-n+1):
                 yield sample[i:i+n]
 
     def unique_ngrams(self):
@@ -138,7 +138,7 @@ def load_dataset(max_length, max_n_examples, tokenize=False, max_vocab_size=2048
                 filtered_line.append('unk')
         filtered_lines.append(tuple(filtered_line))
 
-    for i in xrange(100):
+    for i in range(100):
         print filtered_lines[i]
 
     print "loaded {} lines in dataset".format(len(lines))
