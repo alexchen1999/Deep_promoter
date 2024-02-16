@@ -23,7 +23,7 @@ cur_path = os.getcwd()
 DATA_DIR = os.path.join(cur_path,'seq')
 
 BATCH_SIZE = 32 # Batch size
-ITERS = 200000 # How many iterations to train for
+ITERS = 1000 # How many iterations to train for
 SEQ_LEN = 50 # Sequence length in characters
 DIM = 512 # Model dimensionality. This is fairly slow and overfits, even on
           # Billion Word. Consider decreasing for smaller datasets.
@@ -54,26 +54,70 @@ def softmax(logits):
 def make_noise(shape):
     return tf.random.normal(shape) # change to tf.random.normal for tf2.x
 
-def ResBlock(name, inputs):
+def ResBlock(name, inputs, sf=0.3):
+    '''
+    Defines what as known as a 'residual block' from the original ResNet architecture.
+
+    Idea is to use 'skip connections' where you add the input of the network x to the output h(x)
+    so the hidden layers will have to model the residual quantity h(x) - x.
+
+    @param name: str, prefix for the 1D convolutional layers within the ResBlock.
+    @param inputs: input tensor
+    @param sf: scaling factor used to control the influence of the residual connection h(x) - x.
+
+    @return h(x), activation output of the block but formed using the shortcut connections.
+    
+    @reference: He et al. (2015). Deep Residual Learning for Image Recognition. https://arxiv.org/abs/1512.03385
+    
+    '''
+
+    # Add the input tensor to the output tensor
     output = inputs
+
+    # The architecture of a Residual unit is just two convolutional layers with ReLU activation.
+    # Layer 1
     output = tf.nn.relu(output)
     output = lib.ops.conv1d.Conv1D(name+'.1', DIM, DIM, 5, output)
+
+    # Layer 2
     output = tf.nn.relu(output)
     output = lib.ops.conv1d.Conv1D(name+'.2', DIM, DIM, 5, output)
-    return inputs + (0.3*output)
-#    return 0.3 * output
 
-def Generator(n_samples, prev_outputs=None):
-    output = make_noise(shape=[n_samples, 128])
-    output = lib.ops.linear.Linear('Generator.Input', 128, SEQ_LEN*DIM, output)
-    output = tf.reshape(output, [-1, DIM, SEQ_LEN])
-    output = ResBlock('Generator.1', output)
-    output = ResBlock('Generator.2', output)
-    output = ResBlock('Generator.3', output)
-    output = ResBlock('Generator.4', output)
-    output = ResBlock('Generator.5', output)
-    output = lib.ops.conv1d.Conv1D('Generator.Output', DIM, len(charmap), 1, output)
-    output = tf.transpose(output, [0, 2, 1])
+    # model h(x) = x + (h(x) - x)
+    return inputs + (sf * output)
+
+
+def Generator(n_samples, noise_dim, seq_len=SEQ_LEN, output_dim=DIM, n_resblocks=5):
+    '''
+    Defines the generator component of a GAN which converts Gaussian noise vector to a synthetic sample.
+
+    @param n_samples: int, number of samples in the gaussian noise distribution.
+    @param noise_dim: int, dimensionality of input noise
+    @param seq_len: int, sequence length
+    @param output_dim: int, output dimensionality
+    @param n_resblocks: int, number of resblocks in the generator.
+    @param n_classes: int, number of classes in the output
+    
+    @return output: softmax activation 
+    '''
+
+    output = make_noise(shape=[n_samples, noise_dim])
+
+    # Linear transform/fully connected layer (output = Wx + b; torch.nn.Linear in PyTorch)
+    output = lib.ops.linear.Linear('Generator.Input', noise_dim, seq_len * output_dim, output)
+    output = tf.reshape(output, [-1, output_dim, seq_len])
+
+    # Generator architecture consists of (default) 5 residual units
+    for i in range(n_resblocks):
+        output = ResBlock(f'Generator.{i+1}', output)
+
+    # 1-D Convolutional layer to generate the synthetic data output.
+    # len(charmap) is the number of output classes, (A/C/T/G) or 4.
+    # At this point the output tensor is [output_dim, n_characters, seq_len]
+    output = lib.ops.conv1d.Conv1D('Generator.Output', output_dim, len(charmap), 1, output)  
+
+    # Transpose, apply softmax
+    output = tf.transpose(output, [0, 2, 1]) # Permutation indices; 1 corresponds to the seq length
     output = softmax(output)
     return output
 
