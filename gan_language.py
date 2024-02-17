@@ -87,14 +87,14 @@ def ResBlock(name, inputs, sf=0.3):
     return inputs + (sf * output)
 
 
-def Generator(n_samples, noise_dim, seq_len=SEQ_LEN, output_dim=DIM, n_resblocks=5):
+def Generator(n_samples, noise_dim, seq_len=SEQ_LEN, dim=DIM, n_resblocks=5):
     '''
     Defines the generator component of a GAN which converts Gaussian noise vector to a synthetic sample.
 
     @param n_samples: int, number of samples in the gaussian noise distribution.
     @param noise_dim: int, dimensionality of input noise
     @param seq_len: int, sequence length
-    @param output_dim: int, output dimensionality
+    @param dim: int, hidden layer dimensionality
     @param n_resblocks: int, number of resblocks in the generator.
     @param n_classes: int, number of classes in the output
     
@@ -104,33 +104,51 @@ def Generator(n_samples, noise_dim, seq_len=SEQ_LEN, output_dim=DIM, n_resblocks
     output = make_noise(shape=[n_samples, noise_dim])
 
     # Linear transform/fully connected layer (output = Wx + b; torch.nn.Linear in PyTorch)
-    output = lib.ops.linear.Linear('Generator.Input', noise_dim, seq_len * output_dim, output)
-    output = tf.reshape(output, [-1, output_dim, seq_len])
+    output = lib.ops.linear.Linear('Generator.Input', noise_dim, seq_len * dim, output)
+
+    # Maps the noise dimension to 512 dimension hidden layer and then to 128bp output sequence
+    output = tf.reshape(output, [-1, dim, seq_len])
 
     # Generator architecture consists of (default) 5 residual units
     for i in range(n_resblocks):
         output = ResBlock(f'Generator.{i+1}', output)
 
-    # 1-D Convolutional layer to generate the synthetic data output.
+    # 1-D Convolutional layer to generate the synthetic data output, capturing dependencies in local receptive field (motif).
     # len(charmap) is the number of output classes, (A/C/T/G) or 4.
     # At this point the output tensor is [output_dim, n_characters, seq_len]
-    output = lib.ops.conv1d.Conv1D('Generator.Output', output_dim, len(charmap), 1, output)  
+    output = lib.ops.conv1d.Conv1D('Generator.Output', dim, len(charmap), 1, output)  
 
-    # Transpose, apply softmax
+    # Transpose, reformat to look like a sequence of DNA characters with ACTG
     output = tf.transpose(output, [0, 2, 1]) # Permutation indices; 1 corresponds to the seq length
+
+    # Softmax for maximizing probability for a multiclass (ACTG) sequence generation, presumably
     output = softmax(output)
+
     return output
 
-def Discriminator(inputs):
-    output = tf.transpose(inputs, [0,2,1])
+def Discriminator(inputs, seq_len=SEQ_LEN, dim=DIM, n_resblocks=5):
+    '''
+    Defines the discriminator component of the GAN.
+    
+    
+    '''
+
+    # Transpose tensor of generated DNA sequence to one hot encoded shape [batch_size/n_seqs, seq_len, 4]
+    output = tf.transpose(inputs, [0, 2, 1])
+
+    # Convolutional layer to mapping local sequence motifs to 512 node hidden dimension
     output = lib.ops.conv1d.Conv1D('Discriminator.Input', len(charmap), DIM, 1, output)
-    output = ResBlock('Discriminator.1', output)
-    output = ResBlock('Discriminator.2', output)
-    output = ResBlock('Discriminator.3', output)
-    output = ResBlock('Discriminator.4', output)
-    output = ResBlock('Discriminator.5', output)
-    output = tf.reshape(output, [-1, SEQ_LEN*DIM])
-    output = lib.ops.linear.Linear('Discriminator.Output', SEQ_LEN*DIM, 1, output)
+
+    # Same as generator, discriminator follows ResNet architecture
+    for i in range(n_resblocks):
+        output = ResBlock(f'Generator.{i+1}', output)
+
+    # Reshape
+    output = tf.reshape(output, [-1, seq_len * dim])
+
+    # Apply Fc layer
+    output = lib.ops.linear.Linear('Discriminator.Output', seq_len * dim, 1, output)
+
     return output
 
 real_inputs_discrete = tf.compat.v1.placeholder(tf.int32, shape=[BATCH_SIZE, SEQ_LEN])
@@ -138,6 +156,7 @@ real_inputs = tf.one_hot(real_inputs_discrete, len(charmap))
 fake_inputs = Generator(BATCH_SIZE)
 fake_inputs_discrete = tf.argmax(fake_inputs, fake_inputs.get_shape().ndims-1)
 
+# Two generator setup
 disc_real = Discriminator(real_inputs) 
 disc_fake = Discriminator(fake_inputs)
 
